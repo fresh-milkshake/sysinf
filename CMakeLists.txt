@@ -10,8 +10,11 @@ add_executable(sysinf
     src/cli.cpp
     src/util.cpp
     src/output.cpp
-    src/collectors.cpp
     src/runtime_status.cpp
+    src/collectors/common.cpp
+    src/collectors/core_collectors.cpp
+    src/collectors/perf_collectors.cpp
+    src/collectors/routing.cpp
 )
 
 target_include_directories(sysinf PRIVATE src)

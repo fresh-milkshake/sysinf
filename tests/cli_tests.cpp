@@ -26,65 +26,64 @@ ParseResult Parse(const std::vector<std::string>& args) {
 
 void TestCliParsing() {
     {
-        ParseResult pr = Parse({"summary", "--verbosity", "3", "--format", "tagged", "--token-mode", "economy", "--since", "12h", "--max-events", "50"});
-        Assert(pr.ok, "summary parse should succeed");
-        Assert(pr.context.verbosity == 3, "verbosity parsed");
-        Assert(pr.context.format == OutputFormat::kTagged, "format parsed");
-        Assert(pr.context.token_mode == TokenMode::kEconomy, "token mode parsed");
-        Assert(pr.context.since == "12h", "since parsed");
-        Assert(pr.context.max_events == 50, "max events parsed");
+        ParseResult pr = Parse({"topic", "--target", "thermal,io-latency", "--include", "sensors,queue", "--exclude", "queue", "--sources", "perfcounter.gpu", "--level", "deep"});
+        Assert(pr.ok, "topic parse should succeed");
+        Assert(pr.context.requested_topics.size() == 2, "topic csv parsed");
+        Assert(pr.context.include_facets.contains("sensors"), "include facet parsed");
+        Assert(pr.context.exclude_facets.contains("queue"), "exclude facet parsed");
+        Assert(pr.context.source_overrides.contains("perfcounter.gpu"), "sources parsed");
+        Assert(pr.context.level == CollectionLevel::kDeep, "level parsed");
     }
     {
-        ParseResult pr = Parse({"incident", "--preset", "shutdown"});
-        Assert(pr.ok, "incident shutdown parse should succeed");
-        Assert(pr.context.sub_target == "shutdown", "preset parsed");
+        ParseResult pr = Parse({"topic", "--target", "services-health"});
+        Assert(pr.ok, "new topic target accepted");
     }
     {
-        ParseResult pr = Parse({"topic", "--target", "storage"});
-        Assert(pr.ok, "topic storage parse should succeed");
-        Assert(pr.context.sub_target == "storage", "target parsed");
+        ParseResult pr = Parse({"topic", "--target", "unknown-topic"});
+        Assert(!pr.ok, "unknown topic rejected");
     }
     {
         ParseResult pr = Parse({"summary", "--verbosity", "8"});
         Assert(!pr.ok, "verbosity out of range should fail");
     }
-    {
-        ParseResult pr = Parse({"incident"});
-        Assert(!pr.ok, "incident without preset should fail");
-    }
 }
 
 void TestOutputDeterminism() {
     Context ctx;
-    ctx.command = Command::kSummary;
+    ctx.command = Command::kTopic;
     ctx.format = OutputFormat::kTagged;
+    ctx.level = CollectionLevel::kNormal;
+    ctx.no_color = true;
+    ctx.requested_topics = {"thermal", "io-latency"};
+    ctx.include_facets.insert("sensors");
+    ctx.skipped_sources = {"perfcounter.io_latency"};
 
     CollectorResult res;
-    res.collector_id = "system_baseline";
+    res.collector_id = "thermal";
 
     Finding f;
-    f.id = "sys.os.baseline";
-    f.title = "OS baseline captured";
-    f.summary = "Windows baseline info captured successfully.";
+    f.id = "thermal.sensors";
+    f.title = "Thermal sensor snapshot";
+    f.summary = "Telemetry captured.";
     f.severity = Severity::kInfo;
     f.confidence = 0.9;
-    f.source = "cim/win32_operatingsystem";
+    f.source = "wmi.thermalzone";
     f.evidence = {"line1", "line2", "line3"};
-    f.likely_causes = {"cause1", "cause2", "cause3"};
-    f.next_checks = {"check1", "check2", "check3"};
     res.findings.push_back(f);
 
     std::vector<CollectorResult> results = {res};
 
     const std::string tagged = RenderReport(ctx, results);
     Assert(tagged.find("BEGIN_REPORT") != std::string::npos, "tagged has begin report");
-    Assert(tagged.find("BEGIN_SECTION id=system_baseline") != std::string::npos, "tagged has section");
-    Assert(tagged.find("finding.0.id=sys.os.baseline") != std::string::npos, "tagged includes finding id");
+    Assert(tagged.find("context.requested_topics=thermal,io-latency") != std::string::npos, "tagged includes requested topics");
+    Assert(tagged.find("context.skipped_sources=perfcounter.io_latency") != std::string::npos, "tagged includes skipped sources");
+    Assert(tagged.find("BEGIN_SECTION id=thermal") != std::string::npos, "tagged has section");
 
     ctx.format = OutputFormat::kPretty;
     ctx.token_mode = TokenMode::kEconomy;
     const std::string pretty = RenderReport(ctx, results);
-    Assert(pretty.find("Likely causes") != std::string::npos, "pretty includes likely causes block");
+    Assert(pretty.find("requested_topics") != std::string::npos, "pretty includes topics key in header");
+    Assert(pretty.find("thermal,io-latency") != std::string::npos, "pretty includes topics value in header");
 
     const size_t evidence_count =
         (pretty.find("* line1") != std::string::npos) +

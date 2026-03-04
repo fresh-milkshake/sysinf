@@ -31,3 +31,7 @@ Testing/
 # Logs/temp
 *.log
 *.tmp
+
+# Local binary archives
+tools/*.zip
+

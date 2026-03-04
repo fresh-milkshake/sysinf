@@ -27,28 +27,28 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    if (!IsRunningAsAdmin()) {
-        std::cerr << "Error: sysinf requires Administrator privileges.\n";
-        std::cerr << "Remediation: open elevated terminal (Run as administrator) and re-run the command.\n";
-        return 1;
+    Context context = parse.context;
+    context.is_admin = IsRunningAsAdmin();
+    if (context.command == Command::kSummary && context.requested_topics.empty()) {
+        context.requested_topics = {"system", "hardware", "storage", "power", "services-health"};
     }
 
-    const auto collectors = BuildCollectorsForContext(parse.context);
+    const auto collectors = BuildCollectorsForContext(context);
     std::vector<CollectorResult> results;
     results.reserve(collectors.size());
 
-    RuntimeStatus status(/*enabled=*/true, parse.context.no_color);
+    RuntimeStatus status(/*enabled=*/true, context.no_color);
     status.Start(collectors.size());
 
     for (std::size_t i = 0; i < collectors.size(); ++i) {
         const auto& collector = collectors[i];
         status.SetCurrent(i, collector->DisplayName());
-        results.push_back(collector->Collect(parse.context));
+        results.push_back(collector->Collect(context));
         status.CompleteCurrent();
     }
 
     status.Stop();
 
-    std::cout << RenderReport(parse.context, results);
+    std::cout << RenderReport(context, results);
     return HasHighPriorityFindings(results) ? 1 : 0;
 }

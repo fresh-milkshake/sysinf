@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,24 @@ enum class Command {
     kTopic,
 };
 
+enum class CollectionLevel {
+    kQuick,
+    kNormal,
+    kDeep,
+};
+
+inline std::string CollectionLevelToString(CollectionLevel level) {
+    switch (level) {
+        case CollectionLevel::kQuick:
+            return "quick";
+        case CollectionLevel::kNormal:
+            return "normal";
+        case CollectionLevel::kDeep:
+            return "deep";
+    }
+    return "normal";
+}
+
 struct Context {
     Command command = Command::kHelp;
     std::string sub_target;
@@ -76,6 +95,18 @@ struct Context {
     std::string since = "24h";
     std::int32_t max_events = 100;
     bool no_color = false;
+
+    CollectionLevel level = CollectionLevel::kNormal;
+    std::vector<std::string> requested_topics;
+    std::set<std::string> include_facets;
+    std::set<std::string> exclude_facets;
+    std::set<std::string> source_overrides;
+    std::int32_t per_source_timeout_ms = 2500;
+
+    bool is_admin = false;
+    std::vector<std::string> skipped_sources;
+    std::vector<std::string> denied_sources;
+    std::vector<std::string> timed_out_sources;
 };
 
 #endif

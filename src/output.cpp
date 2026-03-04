@@ -7,6 +7,14 @@
 
 namespace {
 
+struct SeverityStats {
+    int info = 0;
+    int warning = 0;
+    int critical = 0;
+    int error = 0;
+    int total = 0;
+};
+
 std::string TruncateForTokenMode(const std::string& s, TokenMode mode) {
     if (mode == TokenMode::kNormal) {
         return s;
@@ -28,6 +36,50 @@ std::vector<std::string> CompactList(const std::vector<std::string>& values, Tok
         out.push_back(TruncateForTokenMode(values[i], mode));
     }
     return out;
+}
+
+std::string JoinSet(const std::set<std::string>& values) {
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& v : values) {
+        if (!first) out << ",";
+        out << v;
+        first = false;
+    }
+    return out.str();
+}
+
+std::string JoinVector(const std::vector<std::string>& values) {
+    std::ostringstream out;
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i != 0) out << ",";
+        out << values[i];
+    }
+    return out.str();
+}
+
+SeverityStats BuildSeverityStats(const std::vector<CollectorResult>& results) {
+    SeverityStats stats;
+    for (const auto& result : results) {
+        for (const auto& finding : result.findings) {
+            ++stats.total;
+            switch (finding.severity) {
+                case Severity::kInfo:
+                    ++stats.info;
+                    break;
+                case Severity::kWarning:
+                    ++stats.warning;
+                    break;
+                case Severity::kCritical:
+                    ++stats.critical;
+                    break;
+                case Severity::kError:
+                    ++stats.error;
+                    break;
+            }
+        }
+    }
+    return stats;
 }
 
 std::string Paint(const std::string& text, const char* ansi, bool no_color) {
@@ -115,24 +167,6 @@ void RenderPrettyResult(const Context& context, const CollectorResult& result, s
             }
         }
 
-        const auto causes = CompactList(finding.likely_causes, context.token_mode);
-        if (!causes.empty()) {
-            *out << "  " << Paint("Likely causes:", "\x1b[33m", context.no_color) << "\n";
-            for (const auto& item : causes) {
-                *out << "  " << SoftBullet("* ", context.no_color)
-                     << TruncateForTokenMode(item, context.token_mode) << "\n";
-            }
-        }
-
-        const auto checks = CompactList(finding.next_checks, context.token_mode);
-        if (!checks.empty()) {
-            *out << "  " << Paint("Next checks:", "\x1b[32m", context.no_color) << "\n";
-            for (const auto& item : checks) {
-                *out << "  " << SoftBullet("* ", context.no_color)
-                     << TruncateForTokenMode(item, context.token_mode) << "\n";
-            }
-        }
-
         if (!finding.metadata.empty()) {
             *out << "  " << Label("Fields:", context.no_color) << "\n";
             for (const auto& kv : finding.metadata) {
@@ -169,14 +203,6 @@ void RenderTaggedResult(const Context& context, const CollectorResult& result, s
         for (size_t j = 0; j < evidence.size(); ++j) {
             *out << "finding." << idx << ".evidence." << j << "=" << TruncateForTokenMode(evidence[j], context.token_mode) << "\n";
         }
-        const auto causes = CompactList(finding.likely_causes, context.token_mode);
-        for (size_t j = 0; j < causes.size(); ++j) {
-            *out << "finding." << idx << ".cause." << j << "=" << TruncateForTokenMode(causes[j], context.token_mode) << "\n";
-        }
-        const auto checks = CompactList(finding.next_checks, context.token_mode);
-        for (size_t j = 0; j < checks.size(); ++j) {
-            *out << "finding." << idx << ".check." << j << "=" << TruncateForTokenMode(checks[j], context.token_mode) << "\n";
-        }
         for (const auto& kv : finding.metadata) {
             *out << "finding." << idx << ".field." << kv.first << "=" << TruncateForTokenMode(kv.second, context.token_mode) << "\n";
         }
@@ -190,6 +216,7 @@ void RenderTaggedResult(const Context& context, const CollectorResult& result, s
 
 std::string RenderReport(const Context& context, const std::vector<CollectorResult>& results) {
     std::ostringstream out;
+    const SeverityStats stats = BuildSeverityStats(results);
 
     if (context.format == OutputFormat::kPretty) {
         out << Paint("SYSINF REPORT", "\x1b[1;36m", context.no_color) << "\n";
@@ -197,9 +224,40 @@ std::string RenderReport(const Context& context, const std::vector<CollectorResu
             << " " << Label("verbosity", context.no_color) << "=" << context.verbosity
             << " " << Label("since", context.no_color) << "=" << context.since
             << " " << Label("max_events", context.no_color) << "=" << context.max_events
+            << " " << Label("level", context.no_color) << "=" << CollectionLevelToString(context.level)
             << " " << Label("token_mode", context.no_color) << "="
             << (context.token_mode == TokenMode::kNormal ? "normal" : "economy")
-            << "\n\n";
+            << "\n";
+        out << Label("sections", context.no_color) << "=" << results.size()
+            << " " << Label("findings_total", context.no_color) << "=" << stats.total
+            << " " << Label("info", context.no_color) << "=" << stats.info
+            << " " << Label("warning", context.no_color) << "=" << stats.warning
+            << " " << Label("critical", context.no_color) << "=" << stats.critical
+            << " " << Label("error", context.no_color) << "=" << stats.error << "\n";
+        out << Label("requested_topics", context.no_color) << "=" << JoinVector(context.requested_topics) << "\n";
+        out << Label("include", context.no_color) << "=" << JoinSet(context.include_facets) << "\n";
+        out << Label("exclude", context.no_color) << "=" << JoinSet(context.exclude_facets) << "\n";
+        out << Label("sources", context.no_color) << "=" << JoinSet(context.source_overrides) << "\n";
+        out << Label("is_admin", context.no_color) << "=" << (context.is_admin ? "true" : "false") << "\n";
+        out << Label("skipped_sources", context.no_color) << "=" << JoinVector(context.skipped_sources) << "\n";
+        out << Label("denied_sources", context.no_color) << "=" << JoinVector(context.denied_sources) << "\n";
+        out << Label("timed_out_sources", context.no_color) << "=" << JoinVector(context.timed_out_sources) << "\n\n";
+
+        out << SectionTitle("## Summary", context.no_color) << "\n";
+        if (stats.total == 0) {
+            out << SoftBullet("- ", context.no_color) << Paint("No findings were produced by active collectors.", "\x1b[90m", context.no_color) << "\n";
+        } else {
+            out << SoftBullet("- ", context.no_color) << "Collector sections processed: " << results.size() << "\n";
+            out << SoftBullet("- ", context.no_color) << "Findings by severity: "
+                << "info=" << stats.info << ", warning=" << stats.warning << ", critical=" << stats.critical << ", error=" << stats.error << "\n";
+        }
+        if (!context.skipped_sources.empty() || !context.denied_sources.empty() || !context.timed_out_sources.empty()) {
+            out << SoftBullet("- ", context.no_color) << "Collection state: "
+                << "skipped=" << context.skipped_sources.size()
+                << ", denied=" << context.denied_sources.size()
+                << ", timed_out=" << context.timed_out_sources.size() << "\n";
+        }
+        out << "\n";
 
         for (const auto& result : results) {
             RenderPrettyResult(context, result, &out);
@@ -211,7 +269,21 @@ std::string RenderReport(const Context& context, const std::vector<CollectorResu
     out << "context.verbosity=" << context.verbosity << "\n";
     out << "context.since=" << context.since << "\n";
     out << "context.max_events=" << context.max_events << "\n";
-    out << "context.token_mode=" << (context.token_mode == TokenMode::kNormal ? "normal" : "economy") << "\n";
+    out << "context.level=" << CollectionLevelToString(context.level) << "\n";
+    out << "context.sections=" << results.size() << "\n";
+    out << "summary.total_findings=" << stats.total << "\n";
+    out << "summary.info=" << stats.info << "\n";
+    out << "summary.warning=" << stats.warning << "\n";
+    out << "summary.critical=" << stats.critical << "\n";
+    out << "summary.error=" << stats.error << "\n";
+    out << "context.requested_topics=" << JoinVector(context.requested_topics) << "\n";
+    out << "context.include=" << JoinSet(context.include_facets) << "\n";
+    out << "context.exclude=" << JoinSet(context.exclude_facets) << "\n";
+    out << "context.sources=" << JoinSet(context.source_overrides) << "\n";
+    out << "context.is_admin=" << (context.is_admin ? "true" : "false") << "\n";
+    out << "context.skipped_sources=" << JoinVector(context.skipped_sources) << "\n";
+    out << "context.denied_sources=" << JoinVector(context.denied_sources) << "\n";
+    out << "context.timed_out_sources=" << JoinVector(context.timed_out_sources) << "\n";
 
     for (const auto& result : results) {
         RenderTaggedResult(context, result, &out);
