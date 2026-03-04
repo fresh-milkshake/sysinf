@@ -1,0 +1,33 @@
+# Build directories
+build/
+cmake-build-*/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+Testing/
+
+# Compiler/linker artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.exp
+*.pdb
+
+# IDE/editor
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Logs/temp
+*.log
+*.tmp
